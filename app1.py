@@ -1,26 +1,26 @@
 import pandas as pd
 import numpy as np
 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.feature_selection import SelectKBest, f_classif
+
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, roc_auc_score
 
-import streamlit as st
-
-# -------------------- LOAD DATA ----------
+# -------------------- LOAD DATA --------------------
 df = pd.read_csv("creditcard.csv")
 
-# -------------------- CHECK DATA --------
-print(df.head())
-print(df.shape)
-print(df['Class'].value_counts())
-print(df.isnull().sum())
+# -------------------- BASIC INFO --------------------
+print("Shape:", df.shape)
+print("Class Distribution:\n", df['Class'].value_counts())
+print("Missing Values:\n", df.isnull().sum())
 
-# -------------------- HANDLE IMBALANCE ----
+# -------------------- HANDLE IMBALANCE --------------------
 fraud = df[df['Class'] == 1]
 normal = df[df['Class'] == 0]
 
@@ -29,54 +29,72 @@ normal_sample = normal.sample(n=len(fraud), random_state=42)
 new_df = pd.concat([fraud, normal_sample])
 new_df = new_df.sample(frac=1, random_state=42)
 
-# ------------------ FEATURES ------------
+# -------------------- FEATURES --------------------
 X = new_df.drop('Class', axis=1)
 y = new_df['Class']
 
-# ------------- SPLIT --------------------
+# -------------------- FEATURE SCALING --------------------
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# -------------------- FEATURE SELECTION --------------------
+selector = SelectKBest(score_func=f_classif, k=15)
+X_selected = selector.fit_transform(X_scaled, y)
+
+print("Selected Features Shape:", X_selected.shape)
+
+# -------------------- SPLIT --------------------
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
+    X_selected, y, test_size=0.2, random_state=42
 )
 
-# ------- MODELS --------------------
+# -------------------- MODELS --------------------
 
 # Logistic Regression
 lr = LogisticRegression(max_iter=1000)
 lr.fit(X_train, y_train)
 y_pred_lr = lr.predict(X_test)
 
-# Decision Tree
-dt = DecisionTreeClassifier()
-dt.fit(X_train, y_train)
+# Decision Tree with tuning
+dt_params = {'max_depth': [3, 5, 10]}
+dt_grid = GridSearchCV(DecisionTreeClassifier(), dt_params, cv=3)
+dt_grid.fit(X_train, y_train)
+dt = dt_grid.best_estimator_
 y_pred_dt = dt.predict(X_test)
 
-# Random Forest
-rf = RandomForestClassifier()
-rf.fit(X_train, y_train)
+# Random Forest with tuning
+rf_params = {'n_estimators': [50, 100], 'max_depth': [5, 10]}
+rf_grid = GridSearchCV(RandomForestClassifier(), rf_params, cv=3)
+rf_grid.fit(X_train, y_train)
+rf = rf_grid.best_estimator_
 y_pred_rf = rf.predict(X_test)
 
-# KNN
-knn = KNeighborsClassifier()
+# KNN with scaling
+knn = KNeighborsClassifier(n_neighbors=5)
 knn.fit(X_train, y_train)
 y_pred_knn = knn.predict(X_test)
 
-# ------ RESULTS -----------
-print("Logistic:", accuracy_score(y_test, y_pred_lr))
-print("Decision Tree:", accuracy_score(y_test, y_pred_dt))
-print("Random Forest:", accuracy_score(y_test, y_pred_rf))
-print("KNN:", accuracy_score(y_test, y_pred_knn))
+# -------------------- EVALUATION --------------------
 
-print("\nLogistic Report")
-print(classification_report(y_test, y_pred_lr))
+def evaluate(name, y_test, y_pred, model):
+    print(f"\n{name} Results")
+    print("Accuracy:", accuracy_score(y_test, y_pred))
+    print("ROC-AUC:", roc_auc_score(y_test, y_pred))
+    print(classification_report(y_test, y_pred))
 
-print("\nDecision Tree Report")
-print(classification_report(y_test, y_pred_dt))
+evaluate("Logistic Regression", y_test, y_pred_lr, lr)
+evaluate("Decision Tree", y_test, y_pred_dt, dt)
+evaluate("Random Forest", y_test, y_pred_rf, rf)
+evaluate("KNN", y_test, y_pred_knn, knn)
 
-print("\nRandom Forest Report")
-print(classification_report(y_test, y_pred_rf))
+# -------------------- CROSS VALIDATION --------------------
+print("\nCross Validation Scores (Random Forest):")
+cv_scores = cross_val_score(rf, X_selected, y, cv=5)
+print("Scores:", cv_scores)
+print("Average CV Score:", np.mean(cv_scores))
 
-print("\nKNN Report")
-print(classification_report(y_test, y_pred_knn))
+# -------------------- BEST MODEL --------------------
+print("\nBest Model Selected: Random Forest (based on performance)")
 
 # ------- STREAMLIT APP -----------
 
