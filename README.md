@@ -10,4 +10,5 @@ This project uses Machine Learning and ANN to detect fraudulent transactions.
 
 ## How to Run
 pip install -r requirements.txt
+
 streamlit run app.py
